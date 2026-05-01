@@ -1,5 +1,5 @@
 """
-utils/text_extractor.py - استخراج البيانات من النصوص
+utils/text_extractor.py - استخراج البيانات من النصوص (نسخة مُحسّنة)
 """
 import re
 import logging
@@ -16,17 +16,30 @@ logger = logging.getLogger(__name__)
 
 
 class TextExtractor:
-    """مستخرج البيانات من النصوص"""
+    """مستخرج البيانات من النصوص - مع تحسينات للعربية"""
     
     @staticmethod
     def extract_national_id(text: str) -> Optional[str]:
+        # البحث عن 14 رقم متتالي
         match = re.search(NATIONAL_ID_PATTERN, text)
         return match.group(0) if match else None
     
     @staticmethod
     def extract_credit_score(text: str) -> Optional[int]:
-        match = re.search(CREDIT_SCORE_PATTERN, text)
-        return int(match.group(1)) if match else None
+        # أنماط متعددة للبحث عن التقييم
+        patterns = [
+            r'(\d{3})\s*لا\s+يوجد',  # النمط الأصلي
+            r'التقييم الائتماني[:\s]+(\d{3})',  # نمط بديل
+            r'Credit Score[:\s]+(\d{3})',  # إنجليزي
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    continue
+        return None
     
     @staticmethod
     def extract_w_phrases(text: str) -> List[str]:
@@ -38,9 +51,19 @@ class TextExtractor:
         codes = re.findall(INSTITUTION_CODE_PATTERN, text)
         for code in codes:
             clean_code = code.strip()
-            institution_name = INSTITUTION_MAPPING.get(clean_code, "رمز غير معروف")
+            # البحث في الخريطة مع تجاهل حالة الأحرف
+            institution_name = INSTITUTION_MAPPING.get(clean_code)
+            if not institution_name:
+                # بحث تقريبي إذا لم يُوجد تطابق تام
+                for key, value in INSTITUTION_MAPPING.items():
+                    if clean_code in key or key in clean_code:
+                        institution_name = value
+                        break
+            if not institution_name:
+                institution_name = "رمز غير معروف"
             if clean_code not in found_codes:
                 found_codes[clean_code] = institution_name
+                logger.info(f"✅ كود: {clean_code} -> {institution_name}")
         return found_codes
     
     @staticmethod
@@ -50,6 +73,7 @@ class TextExtractor:
             matches = re.findall(phrase_config["pattern"], text, re.IGNORECASE)
             if matches:
                 found[phrase_config["display"]] = len(matches)
+                logger.info(f"✅ عبارة: {phrase_config['display']} (x{len(matches)})")
         return found
     
     @staticmethod
@@ -64,16 +88,20 @@ class TextExtractor:
     
     @staticmethod
     def extract_name_after_id(text: str, national_id: str) -> Optional[str]:
+        """استخراج الاسم بعد الرقم القومي - مع تحسينات للعربية"""
         if not national_id:
             return None
+        
         lines = text.split('\n')
         for i, line in enumerate(lines):
             if national_id in line and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                arabic_match = re.search(r'[\u0600-\u06FF\s]+', next_line)
+                # استخراج النص العربي مع السماح بالمسافات
+                arabic_match = re.search(r'[\u0600-\u06FF\s]{3,}', next_line)
                 if arabic_match:
                     name = arabic_match.group(0).strip()
-                    if len(name) > 2:
+                    # تجاهل الأسماء القصيرة جداً أو التي تحتوي على أرقام
+                    if len(name) > 3 and not re.search(r'\d', name):
                         return name
         return None
 
@@ -107,7 +135,8 @@ class DataProcessor:
                 "ageMonths": age_months,
                 "display": f"{age_years} سنة و {age_months} شهر"
             }
-        except:
+        except Exception as e:
+            logger.error(f"خطأ في حساب العمر: {e}")
             return None
     
     @staticmethod
@@ -120,16 +149,23 @@ class DataProcessor:
             today = date.today()
             diff_days = abs((today - report).days)
             return {"days": diff_days, "display": f"{diff_days} يوم"}
-        except:
+        except Exception as e:
+            logger.error(f"خطأ في حساب الأيام: {e}")
             return None
     
     @staticmethod
     def process_full_text(text: str) -> Dict[str, Any]:
+        """المعالجة الشاملة مع Logging للتصحيح"""
+        logger.info(f"📝 بدء معالجة نص بطول {len(text)} حرف")
+        
         extractor = TextExtractor()
         processor = DataProcessor()
         
         national_id = extractor.extract_national_id(text)
+        logger.info(f"🔍 الرقم القومي: {national_id}")
+        
         credit_score = extractor.extract_credit_score(text)
+        logger.info(f"🔍 التقييم الائتماني: {credit_score}")
         
         result = {
             "basicInfo": {
@@ -157,4 +193,5 @@ class DataProcessor:
                 result["basicInfo"]["reportDate"]
             )
         
+        logger.info(f"✅ اكتملت المعالجة - الأكواد: {len(result['codes'])}, العبارات: {len(result['specialPhrases'])}")
         return result
