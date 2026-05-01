@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 # استيراد الوحدات المحلية
-from config import APP_TITLE, APP_ICON, GOOGLE_DRIVE_SCOPES, analyze_credit_rating
+from config import APP_TITLE, APP_ICON, analyze_credit_rating
 from utils.pdf_processor import PDFProcessor
 from utils.google_drive import GoogleDriveHandler, SimpleDriveFetcher
 from utils.text_extractor import DataProcessor
