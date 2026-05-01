@@ -1,63 +1,75 @@
 """
-utils/google_drive_simple.py - جلب ملفات Google Drive العامة
-✅ يعمل على Streamlit Cloud بدون مصادقة
+utils/google_drive_simple.py - جلب ملفات Google Drive
+✅ مطابق تماماً لمنطق الـ HTML الذي كان يعمل معك
 """
-import logging
 import requests
-from typing import Optional, List, Dict
+import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
 class SimpleDriveFetcher:
-    """
-    جلب ملفات Google Drive العامة
-    ⚠️ يعمل فقط مع الملفات المخصصة لـ "أي شخص لديه الرابط"
-    """
+    """جلب ملفات Google Drive بنفس طريقة الـ HTML"""
     
     @staticmethod
     def get_file_content(file_id: str) -> Optional[bytes]:
         """
-        جلب محتوى ملف عام كـ bytes
+        تحميل ملف من Google Drive
+        ✅ يستخدم نفس البروڭسي الذي يعمل في الـ HTML
         """
+        # 🔗 نفس الرابط الذي كان يعمل في الـ HTML
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        proxy_url = f"https://api.allorigins.win/raw?url={download_url}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/pdf, */*'
+        }
+        
         try:
-            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            response = requests.get(download_url, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                content_type = response.headers.get('content-type', '')
-                if content_type == 'application/pdf' or len(response.content) > 10000:
-                    return response.content
-            
-            logger.warning(f"فشل جلب الملف: {response.status_code}")
-            return None
-            
+            # الطريقة 1: البروڭسي (نفس الـ HTML)
+            response = requests.get(proxy_url, headers=headers, timeout=30)
+            if response.status_code == 200 and len(response.content) > 5000:
+                logger.info(f"✅ تم التحميل عبر البروڭسي: {file_id} ({len(response.content)} بايت)")
+                return response.content
         except Exception as e:
-            logger.error(f"خطأ: {e}")
-            return None
-    
+            logger.warning(f"⚠️ البروڭسي فشل: {e}")
+            
+        try:
+            # الطريقة 2: تحميل مباشر مع التعامل مع تأكيد جوجل
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            resp = session.get(download_url, allow_redirects=True)
+            
+            # إذا طلب جوجل تأكيد (للملفات الكبيرة)
+            if 'confirm' in resp.text and 'id=' in resp.text:
+                import re
+                match = re.search(r'confirm=([a-zA-Z0-9_-]+)', resp.text)
+                if match:
+                    confirm_url = f"{download_url}&confirm={match.group(1)}"
+                    resp = session.get(confirm_url, allow_redirects=True)
+            
+            if resp.status_code == 200 and len(resp.content) > 5000:
+                logger.info(f"✅ تم التحميل المباشر: {file_id} ({len(resp.content)} بايت)")
+                return resp.content
+        except Exception as e:
+            logger.warning(f"⚠️ التحميل المباشر فشل: {e}")
+            
+        return None
+
     @staticmethod
     def extract_file_id(url: str) -> Optional[str]:
-        """استخراج معرف الملف من رابط Google Drive"""
+        """استخراج file_id من رابط Google Drive"""
         import re
         patterns = [
             r'/d/([a-zA-Z0-9-_]+)',
             r'id=([a-zA-Z0-9-_]+)',
             r'file/d/([a-zA-Z0-9-_]+)',
+            r'open\?id=([a-zA-Z0-9-_]+)'
         ]
-        
         for pattern in patterns:
             match = re.search(pattern, url)
-            if match:
-                return match.group(1)
+            if match and match[1]:
+                return match[1]
         return None
-    
-    @staticmethod
-    def search_by_national_id(national_id: str, file_list: List[Dict]) -> List[Dict]:
-        """البحث في قائمة ملفات معروفة عن الرقم القومي"""
-        return [f for f in file_list if national_id in f.get('name', '').lower()]
