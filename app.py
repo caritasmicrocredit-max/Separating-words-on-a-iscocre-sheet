@@ -12,7 +12,7 @@ from pathlib import Path
 # استيراد الوحدات المحلية
 from config import APP_TITLE, APP_ICON, analyze_credit_rating
 from utils.pdf_processor import PDFProcessor
-from utils.google_drive import GoogleDriveHandler, SimpleDriveFetcher
+from utils.google_drive_simple import SimpleDriveFetcher
 from utils.text_extractor import DataProcessor
 from utils.excel_export import ExcelExporter
 
